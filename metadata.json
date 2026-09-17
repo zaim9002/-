@@ -1,0 +1,7 @@
+{
+  "name": "حصن المسلم – أذكار وأدعية",
+  "description": "تطبيق حصن المسلم للأذكار والأدعية اليومية، الرقية الشرعية، والمسبحة الإلكترونية",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
