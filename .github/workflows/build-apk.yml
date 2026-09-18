@@ -22,8 +22,8 @@ jobs:
 
       - name: Verify Java environment
         run: |
-          echo "JAVA_HOME: $JAVA_HOME"
           java -version
+          echo "JAVA_HOME: $JAVA_HOME"
           JAVA_MAJOR=$(java -version 2>&1 | awk -F '"' '/version/ {print $2}' | awk -F '.' '{print $1}')
           echo "Active Java major version: $JAVA_MAJOR"
           if [ -z "$JAVA_MAJOR" ] || [ "$JAVA_MAJOR" -lt 17 ]; then

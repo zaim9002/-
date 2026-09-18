@@ -25,6 +25,7 @@ class HisnRepository(
 
     // Favorites Flow
     val favoriteIds: Flow<List<Int>> = favoriteDao.getAllFavoriteIds()
+    val favoritesCount: Flow<Int> = favoriteDao.getFavoritesCount()
 
     val favoriteDhikrs: Flow<List<Dhikr>> = favoriteIds.map { ids ->
         val set = ids.toSet()
@@ -44,6 +45,7 @@ class HisnRepository(
     // Reading progress Flow
     val allProgress: Flow<List<ReadingProgressEntity>> = readingProgressDao.getAllProgress()
     val lastRead: Flow<ReadingProgressEntity?> = readingProgressDao.getLastRead()
+    val recentReads: Flow<List<ReadingProgressEntity>> = readingProgressDao.getRecentReads()
 
     fun getProgressForDhikr(dhikrId: Int): Flow<ReadingProgressEntity?> =
         readingProgressDao.getProgressForDhikr(dhikrId)

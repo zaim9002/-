@@ -1,5 +1,8 @@
 package com.example.ui.screens.home
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,37 +23,52 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Mosque
 import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.VolunteerActivism
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,19 +77,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Dhikr
-import com.example.ui.components.IslamicCard
 import com.example.ui.theme.IslamicGold
-import com.example.ui.theme.IslamicGreen
-import com.example.ui.theme.IslamicGreenLight
 import com.example.ui.viewmodel.HisnViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private data class QuickDhikrCard(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val emoji: String,
+    val color: Color,
+    val onClick: () -> Unit
+)
 
 @Composable
 fun HomeScreen(
@@ -80,63 +106,186 @@ fun HomeScreen(
     onNavigateToReader: () -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToTasbeeh: () -> Unit,
-    onNavigateToRuqyah: () -> Unit,
-    onNavigateToDuas: () -> Unit
+    onNavigateToDuas: () -> Unit,
+    onNavigateToCategories: () -> Unit,
+    onNavigateToStats: () -> Unit
 ) {
+    val userSettings by viewModel.userSettings.collectAsState()
     val allProgress by viewModel.allProgress.collectAsState()
     val lastReadEntity by viewModel.lastRead.collectAsState()
+    val recentReads by viewModel.recentReads.collectAsState()
     val favoriteIds by viewModel.favoriteIds.collectAsState()
+    val favoriteDhikrs by viewModel.favoriteDhikrs.collectAsState()
 
-    // Pick a daily inspiring dhikr
-    val dailyDhikr = remember {
-        viewModel.allDhikrs.firstOrNull { it.id == 104 } ?: viewModel.allDhikrs.first()
-    }
-    val isDailyFav = favoriteIds.contains(dailyDhikr.id)
+    var showGoalDialog by remember { mutableStateOf(false) }
 
-    // Calculate progress for morning & evening
-    val morningDhikrs = remember { viewModel.allDhikrs.filter { it.categoryId == "morning" } }
-    val eveningDhikrs = remember { viewModel.allDhikrs.filter { it.categoryId == "evening" } }
-
-    val morningCompleted = allProgress.count { p ->
-        p.categoryId == "morning" && p.isCompleted
-    }
-    val eveningCompleted = allProgress.count { p ->
-        p.categoryId == "evening" && p.isCompleted
-    }
-
-    val totalDayGoal = (morningDhikrs.size + eveningDhikrs.size).coerceAtLeast(1)
-    val totalDayCompleted = morningCompleted + eveningCompleted
-    val completionPercent = (totalDayCompleted.toFloat() / totalDayGoal * 100).toInt().coerceIn(0, 100)
-
-    val lastReadDhikr = remember(lastReadEntity) {
-        lastReadEntity?.let { lr -> viewModel.allDhikrs.find { it.id == lr.dhikrId } }
-    }
-
-    val todayArabicDate = remember {
-        val sdf = SimpleDateFormat("EEEE، d MMMM", Locale("ar"))
+    // Date formatting
+    val arabicDate = remember {
+        val sdf = SimpleDateFormat("EEEE، d MMMM yyyy", Locale("ar"))
         sdf.format(Date())
     }
+
+    // Resolve Last Read Dhikr
+    val lastReadDhikr = remember(lastReadEntity) {
+        lastReadEntity?.let { entity ->
+            viewModel.allDhikrs.find { it.id == entity.dhikrId }
+        }
+    }
+
+    // Pick a featured inspiring dhikr
+    val featuredDhikr = remember {
+        viewModel.allDhikrs.find { it.id == 2401 }
+            ?: viewModel.allDhikrs.find { it.id == 104 }
+            ?: viewModel.allDhikrs.first()
+    }
+    val isFeaturedFav = favoriteIds.contains(featuredDhikr.id)
+
+    // The 10 Primary Adhkar Cards requested explicitly by the user:
+    val primaryCards = listOf(
+        QuickDhikrCard(
+            id = "morning",
+            title = "أذكار الصباح",
+            subtitle = "ابدأ يومك بحفظ الله",
+            icon = Icons.Default.WbSunny,
+            emoji = "🌅",
+            color = Color(0xFFE89A3C),
+            onClick = {
+                val list = viewModel.allDhikrs.filter { it.categoryId == "morning" }
+                viewModel.openDhikrReader(list, 0)
+                onNavigateToReader()
+            }
+        ),
+        QuickDhikrCard(
+            id = "evening",
+            title = "أذكار المساء",
+            subtitle = "حصنك الحصين بالمساء",
+            icon = Icons.Default.NightsStay,
+            emoji = "🌙",
+            color = Color(0xFF6366F1),
+            onClick = {
+                val list = viewModel.allDhikrs.filter { it.categoryId == "evening" }
+                viewModel.openDhikrReader(list, 0)
+                onNavigateToReader()
+            }
+        ),
+        QuickDhikrCard(
+            id = "after_prayer",
+            title = "بعد الصلاة",
+            subtitle = "أذكار دبر كل صلاة مكتوبة",
+            icon = Icons.Default.Mosque,
+            emoji = "🕌",
+            color = Color(0xFF10B981),
+            onClick = {
+                val list = viewModel.allDhikrs.filter { it.categoryId == "after_prayer" }
+                viewModel.openDhikrReader(list, 0)
+                onNavigateToReader()
+            }
+        ),
+        QuickDhikrCard(
+            id = "sleep",
+            title = "أذكار النوم",
+            subtitle = "حصن المسلم قبل المنام",
+            icon = Icons.Default.Bedtime,
+            emoji = "😴",
+            color = Color(0xFF8B5CF6),
+            onClick = {
+                val list = viewModel.allDhikrs.filter { it.categoryId == "sleep" }
+                viewModel.openDhikrReader(list, 0)
+                onNavigateToReader()
+            }
+        ),
+        QuickDhikrCard(
+            id = "waking",
+            title = "الاستيقاظ",
+            subtitle = "الحمد لله الذي أحيانا",
+            icon = Icons.Default.Alarm,
+            emoji = "☀️",
+            color = Color(0xFFF59E0B),
+            onClick = {
+                val list = viewModel.allDhikrs.filter { it.categoryId == "waking" }
+                viewModel.openDhikrReader(list, 0)
+                onNavigateToReader()
+            }
+        ),
+        QuickDhikrCard(
+            id = "home",
+            title = "دخول المنزل",
+            subtitle = "دعاء الدخول والخروج",
+            icon = Icons.Default.Home,
+            emoji = "🚪",
+            color = Color(0xFF0EA5E9),
+            onClick = {
+                val list = viewModel.allDhikrs.filter { it.categoryId == "home" }
+                viewModel.openDhikrReader(list, 0)
+                onNavigateToReader()
+            }
+        ),
+        QuickDhikrCard(
+            id = "travel",
+            title = "السفر",
+            subtitle = "دعاء الركوب والسفر",
+            icon = Icons.Default.DirectionsCar,
+            emoji = "🚗",
+            color = Color(0xFF06B6D4),
+            onClick = {
+                val list = viewModel.allDhikrs.filter { it.categoryId == "travel" }
+                viewModel.openDhikrReader(list, 0)
+                onNavigateToReader()
+            }
+        ),
+        QuickDhikrCard(
+            id = "food",
+            title = "الطعام والشراب",
+            subtitle = "التسمية والحمد والبركة",
+            icon = Icons.Default.Restaurant,
+            emoji = "🍽️",
+            color = Color(0xFF84CC16),
+            onClick = {
+                val list = viewModel.allDhikrs.filter { it.categoryId == "food" }
+                viewModel.openDhikrReader(list, 0)
+                onNavigateToReader()
+            }
+        ),
+        QuickDhikrCard(
+            id = "duas",
+            title = "الأدعية",
+            subtitle = "أدعية القرآن والسنة النبوية",
+            icon = Icons.Default.VolunteerActivism,
+            emoji = "🤲",
+            color = Color(0xFFEC4899),
+            onClick = onNavigateToDuas
+        ),
+        QuickDhikrCard(
+            id = "all_adhkar",
+            title = "جميع الأذكار",
+            subtitle = "${viewModel.categories.size} تصنيفاً و ${viewModel.allDhikrs.size} ذكراً",
+            icon = Icons.Default.MenuBook,
+            emoji = "📖",
+            color = Color(0xFF14B8A6),
+            onClick = onNavigateToCategories
+        )
+    )
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .testTag("home_screen"),
-        contentPadding = PaddingValues(bottom = 96.dp)
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
-        // 1. Header & Search Bar
+        // ================= Hero App Bar =================
         item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
-                        brush = Brush.verticalGradient(
+                        Brush.verticalGradient(
                             colors = listOf(
                                 MaterialTheme.colorScheme.primaryContainer,
-                                MaterialTheme.colorScheme.background
+                                MaterialTheme.colorScheme.surface
                             )
                         )
                     )
-                    .padding(horizontal = 20.dp, vertical = 18.dp)
+                    .padding(horizontal = 20.dp, vertical = 20.dp)
             ) {
                 Column {
                     Row(
@@ -146,342 +295,357 @@ fun HomeScreen(
                     ) {
                         Column {
                             Text(
-                                text = "السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
+                                text = "حصن المسلم",
+                                style = MaterialTheme.typography.headlineMedium.copy(
+                                    fontWeight = FontWeight.ExtraBold
+                                ),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = todayArabicDate,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                text = "أذكارك اليومية بين يديك",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
 
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(44.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
+                        // Top Action Icons
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconButton(
+                                onClick = onNavigateToStats,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                                    .testTag("stats_icon_button")
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.Mosque,
-                                    contentDescription = "حصن المسلم",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
+                                    imageVector = Icons.Default.BarChart,
+                                    contentDescription = "الإحصائيات",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            IconButton(
+                                onClick = onNavigateToSearch,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                                    .testTag("search_icon_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "البحث",
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Instant Search Field button
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onNavigateToSearch() }
-                            .testTag("search_trigger_bar")
+                    Text(
+                        text = arabicDate,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+                }
+            }
+        }
+
+        // ================= 🎯 Daily Goal Section =================
+        item {
+            val dailyGoal = userSettings.dailyGoalCount.coerceAtLeast(1)
+            val todayCount = userSettings.todayDhikrCount
+            val progressFrac = (todayCount.toFloat() / dailyGoal.toFloat()).coerceIn(0f, 1f)
+            val percentage = (progressFrac * 100).toInt()
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .testTag("daily_goal_card"),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "بحث",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "ابحث في أذكار وأدعية حصن المسلم...",
-                                style = MaterialTheme.typography.bodyMedium.copy(
+                                text = "🎯",
+                                fontSize = 22.sp,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "هدف اليوم",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                Text(
+                                    text = "أكمل $dailyGoal ذكر اليوم",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { showGoalDialog = true },
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "تعديل الهدف",
+                                style = MaterialTheme.typography.labelSmall
                             )
                         }
                     }
-                }
-            }
-        }
 
-        // 2. Day Progress Overview Card
-        item {
-            IslamicCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "نسبة إنجاز أذكار اليوم",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "تمت قراءة $totalDayCompleted من أصل $totalDayGoal ذكراً مسنوناً",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = { completionPercent / 100f },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "$completionPercent%",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            text = "أنجزت $todayCount من $dailyGoal",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "$percentage%",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LinearProgressIndicator(
+                        progress = { progressFrac },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(10.dp)
+                            .clip(CircleShape),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    if (todayCount >= dailyGoal) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "🎉 ما شاء الله! حققت هدفك اليومي، بارك الله فيك.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
             }
         }
 
-        // 3. Morning & Evening Quick Cards
+        // ================= 10 Primary Adhkar Cards =================
         item {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "الأذكار الأساسية",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+            )
+        }
+
+        // 2-Column Grid for the 10 cards
+        val chunkedCards = primaryCards.chunked(2)
+        items(chunkedCards) { pair ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(horizontal = 16.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Morning Card
-                IslamicCard(
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("card_morning_adhkar"),
-                    onClick = {
-                        viewModel.openDhikrReader(morningDhikrs, 0)
-                        onNavigateToReader()
-                    },
-                    backgroundColor = MaterialTheme.colorScheme.surface
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Box(
+                pair.forEach { card ->
+                    Card(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { card.onClick() }
+                            .testTag("card_${card.id}"),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Column(
                             modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFFFFF3CD)),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .padding(14.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.WbSunny,
-                                contentDescription = "أذكار الصباح",
-                                tint = Color(0xFFD97706),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Text(
-                            text = "أذكار الصباح",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = "$morningCompleted / ${morningDhikrs.size} مقروء",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "ابدأ الآن",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = card.emoji,
+                                    fontSize = 22.sp
                                 )
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(card.color.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = card.icon,
+                                        contentDescription = null,
+                                        tint = card.color,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = card.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
+
+                            Spacer(modifier = Modifier.height(2.dp))
+
+                            Text(
+                                text = card.subtitle,
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                 }
-
-                // Evening Card
-                IslamicCard(
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("card_evening_adhkar"),
-                    onClick = {
-                        viewModel.openDhikrReader(eveningDhikrs, 0)
-                        onNavigateToReader()
-                    },
-                    backgroundColor = MaterialTheme.colorScheme.surface
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFFEDE9FE)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.NightsStay,
-                                contentDescription = "أذكار المساء",
-                                tint = Color(0xFF7C3AED),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Text(
-                            text = "أذكار المساء",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = "$eveningCompleted / ${eveningDhikrs.size} مقروء",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "ابدأ الآن",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            )
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
+                // If odd number in row
+                if (pair.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
 
-        // 4. "ذكر الله" - Card of the day
-        item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
-            ) {
+        // ================= قسم "آخر ما قرأت" (Recently Read) =================
+        if (lastReadDhikr != null) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "ذكر الله",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        text = "آخر ما قرأت",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
-                        text = "سيد الاستغفار",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            color = IslamicGold,
-                            fontWeight = FontWeight.Bold
-                        )
+                        text = "متابعة الورد",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                IslamicCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        viewModel.openDhikrById(dailyDhikr.id)
-                        onNavigateToReader()
-                    }
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable {
+                            viewModel.openDhikrById(lastReadDhikr.id)
+                            onNavigateToReader()
+                        }
+                        .testTag("last_read_card"),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                    )
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = dailyDhikr.text,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                lineHeight = 30.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            ),
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Text(
-                            text = dailyDhikr.benefit,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = lastReadDhikr.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
+                            val catTitle = viewModel.categories.find { it.id == lastReadDhikr.categoryId }?.title ?: ""
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = catTitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = lastReadDhikr.text,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
 
                         Spacer(modifier = Modifier.height(12.dp))
@@ -491,275 +655,338 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            val progress = allProgress.find { it.dhikrId == lastReadDhikr.id }
+                            val completed = progress?.currentCount ?: 0
+                            val target = lastReadDhikr.count
                             Text(
-                                text = dailyDhikr.source,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = IslamicGold
-                                )
+                                text = "الإنجاز: $completed / $target",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
                             )
 
-                            Row {
+                            Button(
+                                onClick = {
+                                    viewModel.openDhikrById(lastReadDhikr.id)
+                                    onNavigateToReader()
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("متابعة", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ================= قسم "الذكر المفضل" (Favorite Dhikr) =================
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = if (favoriteDhikrs.isNotEmpty()) "أذكارك المفضلة (${favoriteDhikrs.size})" else "الذكر المفضل",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+            )
+        }
+
+        if (favoriteDhikrs.isNotEmpty()) {
+            items(favoriteDhikrs.take(3)) { fav ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable {
+                            viewModel.openDhikrById(fav.id)
+                            onNavigateToReader()
+                        }
+                        .testTag("fav_item_${fav.id}"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = fav.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            IconButton(
+                                onClick = { viewModel.toggleFavorite(fav.id) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bookmark,
+                                    contentDescription = "إزالة من المفضلة",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = fav.text,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { viewModel.copyDhikr(fav) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "نسخ",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { viewModel.shareDhikr(fav) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "مشاركة",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Featured Dhikr recommendation if no favorites yet
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .testTag("featured_dhikr_card"),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "✨ " + featuredDhikr.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            IconButton(
+                                onClick = { viewModel.toggleFavorite(featuredDhikr.id) },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isFeaturedFav) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = "حفظ بالمفضلة",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = featuredDhikr.text,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 22.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = featuredDhikr.benefit,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = {
+                                    viewModel.openDhikrById(featuredDhikr.id)
+                                    onNavigateToReader()
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("قراءة وتسبيح", style = MaterialTheme.typography.labelSmall)
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 IconButton(
-                                    onClick = { viewModel.copyDhikr(dailyDhikr) },
-                                    modifier = Modifier.size(34.dp)
+                                    onClick = { viewModel.copyDhikr(featuredDhikr) },
+                                    modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
                                         contentDescription = "نسخ",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
                                 IconButton(
-                                    onClick = { viewModel.shareDhikr(dailyDhikr) },
-                                    modifier = Modifier.size(34.dp)
+                                    onClick = { viewModel.shareDhikr(featuredDhikr) },
+                                    modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Share,
                                         contentDescription = "مشاركة",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
-                                IconButton(
-                                    onClick = { viewModel.toggleFavorite(dailyDhikr.id) },
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isDailyFav) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                        contentDescription = "مفضلة",
-                                        tint = if (isDailyFav) IslamicGold else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
 
-        // 5. Resume Reading ("تابع من حيث توقفت")
-        if (lastReadDhikr != null) {
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = "تابع من حيث توقفت",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    IslamicCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("resume_reading_card"),
-                        onClick = {
-                            viewModel.openDhikrById(lastReadDhikr.id)
-                            onNavigateToReader()
-                        }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = lastReadDhikr.title,
-                                    style = MaterialTheme.typography.titleSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = lastReadDhikr.text,
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.PlayArrow,
-                                        contentDescription = "متابعة",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+    // Daily Goal Dialog
+    if (showGoalDialog) {
+        GoalSettingDialog(
+            currentGoal = userSettings.dailyGoalCount,
+            onDismiss = { showGoalDialog = false },
+            onSave = { newGoal ->
+                viewModel.setDailyGoal(newGoal)
+                showGoalDialog = false
             }
-        }
-
-        // 6. Quick Access (الوصول السريع)
-        item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp)
-            ) {
-                Text(
-                    text = "الوصول السريع",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val quickItems = listOf(
-                    Triple("أذكار الصباح", "morning", Icons.Default.WbSunny),
-                    Triple("أذكار المساء", "evening", Icons.Default.NightsStay),
-                    Triple("أذكار النوم", "sleep", Icons.Default.Bedtime),
-                    Triple("بعد الصلاة", "after_prayer", Icons.Default.Mosque),
-                    Triple("الرقية الشرعية", "ruqyah", Icons.Default.Security),
-                    Triple("أدعية مختارة", "quran_duas", Icons.Default.MenuBook),
-                    Triple("المسبحة", "tasbeeh", Icons.Default.Timer),
-                    Triple("حصن المسلم", "all", Icons.Default.Star)
-                )
-
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(quickItems) { item ->
-                        QuickAccessChip(
-                            title = item.first,
-                            icon = item.third,
-                            onClick = {
-                                when (item.second) {
-                                    "ruqyah" -> onNavigateToRuqyah()
-                                    "tasbeeh" -> onNavigateToTasbeeh()
-                                    "quran_duas" -> onNavigateToDuas()
-                                    "all" -> onNavigateToCategory("morning")
-                                    else -> onNavigateToCategory(item.second)
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        // 7. الأكثر استخداماً (Most Used Sections)
-        item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = "الأكثر استخداماً",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                val mostUsed = listOf(
-                    Pair("أذكار الاستيقاظ", "waking"),
-                    Pair("أذكار المسجد", "mosque"),
-                    Pair("أذكار المنزل", "home"),
-                    Pair("الاستغفار والتوبة", "istighfar")
-                )
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    mostUsed.forEach { pair ->
-                        IslamicCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { onNavigateToCategory(pair.second) }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = pair.first,
-                                    style = MaterialTheme.typography.bodyLarge.copy(
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                )
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        )
     }
 }
 
 @Composable
-fun QuickAccessChip(
-    title: String,
-    icon: ImageVector,
-    onClick: () -> Unit
+private fun GoalSettingDialog(
+    currentGoal: Int,
+    onDismiss: () -> Unit,
+    onSave: (Int) -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant
-        ),
-        modifier = Modifier
-            .clickable { onClick() }
-            .testTag("quick_chip_$title")
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
+    var goalText by remember { mutableStateOf(currentGoal.toString()) }
+    val presets = listOf(50, 100, 200, 300, 500)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
             Text(
-                text = title,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                text = "🎯 تعديل الهدف اليومي",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
             )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "حدد عدد الأذكار والتسبيحات التي ترغب في إتمامها يومياً:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Presets
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    presets.forEach { preset ->
+                        FilterChip(
+                            selected = goalText == preset.toString(),
+                            onClick = { goalText = preset.toString() },
+                            label = { Text("$preset", style = MaterialTheme.typography.labelSmall) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                OutlinedTextField(
+                    value = goalText,
+                    onValueChange = { input ->
+                        val filtered = input.filter { it.isDigit() }
+                        if (filtered.length <= 4) goalText = filtered
+                    },
+                    label = { Text("العدد المطلوب") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val count = goalText.toIntOrNull() ?: 100
+                    onSave(count)
+                },
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("حفظ")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("إلغاء")
+            }
         }
-    }
+    )
 }

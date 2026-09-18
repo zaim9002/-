@@ -1,8 +1,10 @@
 package com.example.ui.screens.reader
 
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,15 +28,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,8 +67,6 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.components.HisnTopBar
 import com.example.ui.components.IslamicCard
 import com.example.ui.theme.IslamicGold
-import com.example.ui.theme.IslamicGreen
-import com.example.ui.theme.IslamicGreenLight
 import com.example.ui.viewmodel.HisnViewModel
 
 @Composable
@@ -102,50 +103,64 @@ fun DhikrReaderScreen(
     val currentDhikr = dhikrList[currentIndex]
     val isFav = favoriteIds.contains(currentDhikr.id)
     val isThisDhikrPlaying = isTtsPlaying && (playingDhikrId == currentDhikr.id)
+    val isCompleted = completedCount >= currentDhikr.count
 
     val interactionSource = remember { MutableInteractionSource() }
     val isCounterPressed by interactionSource.collectIsPressedAsState()
     val counterScale by animateFloatAsState(
-        targetValue = if (isCounterPressed) 0.93f else 1f,
+        targetValue = if (isCounterPressed) 0.92f else 1f,
         animationSpec = spring(),
         label = "counter_scale"
     )
 
     val scrollState = rememberScrollState()
 
+    // Formatted text based on tashkeel setting
+    val displayText = remember(currentDhikr.text, userSettings.showTashkeel) {
+        viewModel.formatDhikrText(currentDhikr.text, userSettings.showTashkeel)
+    }
+
+    val categoryTitle = remember(currentDhikr.categoryId) {
+        viewModel.categories.find { it.id == currentDhikr.categoryId }?.title ?: "حصن المسلم"
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .testTag("dhikr_reader_screen")
     ) {
-        // Top Bar with Actions
+        // ================= Top Bar =================
         HisnTopBar(
             title = currentDhikr.title,
             onBackClick = onBackClick,
             actions = {
-                // Font Size zoom controls
+                // Sound toggle
                 IconButton(
-                    onClick = { viewModel.setFontSize(userSettings.fontSizeSp - 2f) },
-                    modifier = Modifier.size(36.dp).testTag("font_decrease_btn")
+                    onClick = { viewModel.toggleSound(!userSettings.isSoundEnabled) },
+                    modifier = Modifier.size(36.dp).testTag("reader_sound_toggle")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Remove,
-                        contentDescription = "تصغير الخط",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(
-                    onClick = { viewModel.setFontSize(userSettings.fontSizeSp + 2f) },
-                    modifier = Modifier.size(36.dp).testTag("font_increase_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "تكبير الخط",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        imageVector = if (userSettings.isSoundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                        contentDescription = "الصوت",
+                        tint = if (userSettings.isSoundEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
-                // Audio Button
+                // Haptic toggle
+                IconButton(
+                    onClick = { viewModel.toggleHaptic(!userSettings.isHapticEnabled) },
+                    modifier = Modifier.size(36.dp).testTag("reader_haptic_toggle")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Vibration,
+                        contentDescription = "الاهتزاز",
+                        tint = if (userSettings.isHapticEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Audio recitation
                 IconButton(
                     onClick = {
                         viewModel.audioReciterService.speak(currentDhikr.id, currentDhikr.text)
@@ -154,8 +169,9 @@ fun DhikrReaderScreen(
                 ) {
                     Icon(
                         imageVector = if (isThisDhikrPlaying) Icons.Default.Stop else Icons.Default.VolumeUp,
-                        contentDescription = if (isThisDhikrPlaying) "إيقاف الصوت" else "استماع للذكر",
-                        tint = if (isThisDhikrPlaying) IslamicGold else MaterialTheme.colorScheme.primary
+                        contentDescription = if (isThisDhikrPlaying) "إيقاف التلاوة" else "استماع للتلاوة",
+                        tint = if (isThisDhikrPlaying) IslamicGold else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
@@ -167,15 +183,17 @@ fun DhikrReaderScreen(
                     Icon(
                         imageVector = if (isFav) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                         contentDescription = "مفضلة",
-                        tint = if (isFav) IslamicGold else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (isFav) IslamicGold else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
         )
 
-        // Progress Bar across list
+        // Progress line across the category
+        val listProgress = ((currentIndex + 1).toFloat() / dhikrList.size.toFloat()).coerceIn(0f, 1f)
         LinearProgressIndicator(
-            progress = { (currentIndex + 1).toFloat() / dhikrList.size },
+            progress = { listProgress },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(4.dp),
@@ -183,16 +201,16 @@ fun DhikrReaderScreen(
             trackColor = MaterialTheme.colorScheme.surfaceVariant
         )
 
-        // Reading Content + Bottom Controls
+        // ================= Main Scrollable Content =================
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
                 .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 18.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Index badge (e.g. ذكر 3 من 12)
+            // Category Badge & Index Indicator
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -203,39 +221,49 @@ fun DhikrReaderScreen(
                     color = MaterialTheme.colorScheme.primaryContainer
                 ) {
                     Text(
-                        text = "ذكر ${currentIndex + 1} من ${dhikrList.size}",
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        text = categoryTitle,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                 }
 
-                Text(
-                    text = "التكرار المطلوب: ${currentDhikr.count}",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        text = "ذكر ${currentIndex + 1} من ${dhikrList.size}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
-                )
+                }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Main Dhikr Text Card
+            // ================= بطاقة الذكر الأنيقة =================
             IslamicCard(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (userSettings.countMode == "fullscreen") {
+                            Modifier.clickable { viewModel.onCounterTap() }
+                        } else Modifier
+                    )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(22.dp)
                 ) {
+                    // Dhikr Text
                     Text(
-                        text = currentDhikr.text,
+                        text = displayText,
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = userSettings.fontSizeSp.sp,
-                            lineHeight = (userSettings.fontSizeSp * 1.75f).sp,
+                            lineHeight = (userSettings.fontSizeSp * 1.65f + userSettings.lineSpacingSp).sp,
                             textAlign = TextAlign.Center,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
@@ -243,20 +271,42 @@ fun DhikrReaderScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // عدد التكرار
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                        ) {
+                            Text(
+                                text = "عدد التكرار: 🔢 ${currentDhikr.count} مرات",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    // المصدر
                     if (currentDhikr.source.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(18.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "المصدر: ${currentDhikr.source}",
+                                text = "📚 المصدر: ${currentDhikr.source}",
                                 style = MaterialTheme.typography.labelSmall.copy(
-                                    color = IslamicGold,
-                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium,
                                     textAlign = TextAlign.Center
                                 ),
                                 modifier = Modifier.fillMaxWidth()
@@ -264,13 +314,14 @@ fun DhikrReaderScreen(
                         }
                     }
 
+                    // الفضيلة
                     if (currentDhikr.benefit.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "فضله: ${currentDhikr.benefit}",
+                            text = "✨ الفضيلة: ${currentDhikr.benefit}",
                             style = MaterialTheme.typography.bodySmall.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 20.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                lineHeight = 18.sp,
                                 textAlign = TextAlign.Center
                             ),
                             modifier = Modifier.fillMaxWidth()
@@ -279,86 +330,104 @@ fun DhikrReaderScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Copy & Share buttons inside card
+                    // Action Buttons Row: ⭐ مفضلة, 📋 نسخ, 📤 مشاركة, 🔄 إعادة
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
+                        horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.clickable { viewModel.copyDhikr(currentDhikr) }
+                        // المفضلة
+                        IconButton(
+                            onClick = { viewModel.toggleFavorite(currentDhikr.id) },
+                            modifier = Modifier.testTag("action_fav_btn")
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "نسخ",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "نسخ الذكر",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
+                            Icon(
+                                imageVector = if (isFav) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                contentDescription = "مفضلة",
+                                tint = if (isFav) IslamicGold else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
 
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.clickable { viewModel.shareDhikr(currentDhikr) }
+                        // نسخ
+                        IconButton(
+                            onClick = { viewModel.copyDhikr(currentDhikr) },
+                            modifier = Modifier.testTag("action_copy_btn")
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Share,
-                                    contentDescription = "مشاركة",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "مشاركة",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "نسخ الذكر",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // مشاركة
+                        IconButton(
+                            onClick = { viewModel.shareDhikr(currentDhikr) },
+                            modifier = Modifier.testTag("action_share_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "مشاركة الذكر",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // إعادة
+                        IconButton(
+                            onClick = { viewModel.resetCurrentCounter() },
+                            modifier = Modifier.testTag("action_reset_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "إعادة العداد",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Giant Interactive Counter Button (3 / 3 -> 2 / 3 -> 1 / 3 -> 0 / 3)
+            // ================= 🔢 نظام العداد الاحترافي =================
+            // عرض العداد: e.g. "العداد: 37 / 100"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "العداد: $completedCount / ${currentDhikr.count}",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // الزر الكبير: "اضغط للتسبيح" / "اضغط للعد"
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(140.dp)
+                    .size(148.dp)
                     .scale(counterScale)
                     .clip(CircleShape)
                     .background(
                         brush = Brush.radialGradient(
-                            colors = if (remainingCount == 0) listOf(
+                            colors = if (isCompleted) listOf(
                                 IslamicGold,
                                 MaterialTheme.colorScheme.primary
                             ) else listOf(
                                 MaterialTheme.colorScheme.primary,
-                                Color(0xFF0C4D35)
+                                Color(0xFF093927)
                             )
                         )
                     )
                     .border(
                         width = 4.dp,
-                        color = if (remainingCount == 0) IslamicGold else IslamicGold.copy(alpha = 0.6f),
+                        color = if (isCompleted) IslamicGold else IslamicGold.copy(alpha = 0.5f),
                         shape = CircleShape
                     )
                     .clickable(
@@ -373,54 +442,99 @@ fun DhikrReaderScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "$remainingCount",
-                        style = MaterialTheme.typography.displayLarge.copy(
+                        text = "$completedCount",
+                        style = MaterialTheme.typography.displayMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 44.sp
+                            color = Color.White
                         )
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "من ${currentDhikr.count}",
+                        text = if (isCompleted) "اكتمل الذكر" else "اضغط للعد",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            color = Color(0xFFE2F4EB),
-                            fontWeight = FontWeight.Medium
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontWeight = FontWeight.SemiBold
                         )
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            Text(
-                text = if (remainingCount == 0) "أحسنت! تم إكمال هذا الذكر" else "المس الدائرة لاحتساب التكرار",
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = if (remainingCount == 0) IslamicGold else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (remainingCount == 0) FontWeight.Bold else FontWeight.Normal
+            // تنبيه لطيف عند إتمام الذكر
+            AnimatedVisibility(
+                visible = isCompleted,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "🎉 ما شاء الله! اكتمل العدد المطلوب للذكر",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // إجمالي الأذكار اليومية
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "عداد اليوم: ${userSettings.todayDhikrCount} ذكر  •  الإجمالي: ${userSettings.totalDhikrCount}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
                 )
-            )
+            }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Fixed Bottom Navigation Controls (Previous, Reset, Next)
+        // ================= Fixed Bottom Navigation Bar =================
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 8.dp,
             border = androidx.compose.foundation.BorderStroke(
                 1.dp,
-                MaterialTheme.colorScheme.outlineVariant
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
             )
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Previous
+                // السابق
                 Button(
                     onClick = { viewModel.prevDhikr() },
                     enabled = currentIndex > 0,
@@ -442,10 +556,10 @@ fun DhikrReaderScreen(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Reset
+                // إعادة
                 IconButton(
                     onClick = { viewModel.resetCurrentCounter() },
-                    modifier = Modifier.size(46.dp).testTag("reset_counter_btn")
+                    modifier = Modifier.size(44.dp).testTag("reset_counter_btn")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
@@ -456,7 +570,7 @@ fun DhikrReaderScreen(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Next
+                // التالي
                 Button(
                     onClick = { viewModel.nextDhikr() },
                     enabled = currentIndex < dhikrList.size - 1,

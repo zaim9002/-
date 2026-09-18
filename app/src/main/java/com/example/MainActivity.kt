@@ -55,6 +55,7 @@ import com.example.ui.screens.ruqyah.RuqyahScreen
 import com.example.ui.screens.search.SearchScreen
 import com.example.ui.screens.settings.SettingsScreen
 import com.example.ui.screens.splash.SplashScreen
+import com.example.ui.screens.stats.StatisticsScreen
 import com.example.ui.screens.tasbeeh.TasbeehScreen
 import com.example.ui.theme.IslamicGold
 import com.example.ui.theme.MyApplicationTheme
@@ -74,7 +75,10 @@ class MainActivity : ComponentActivity() {
                 null -> isSystemInDarkTheme()
             }
 
-            MyApplicationTheme(darkTheme = isDarkTheme) {
+            MyApplicationTheme(
+                darkTheme = isDarkTheme,
+                palette = userSettings.themePalette
+            ) {
                 // Arabic RTL Layout Provider
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     HisnApp(viewModel = hisnViewModel)
@@ -194,11 +198,14 @@ fun HisnApp(viewModel: HisnViewModel) {
                         onNavigateToTasbeeh = {
                             navController.navigate(BottomNavItem.Tasbeeh.route)
                         },
-                        onNavigateToRuqyah = {
-                            navController.navigate("ruqyah")
-                        },
                         onNavigateToDuas = {
                             navController.navigate("duas")
+                        },
+                        onNavigateToCategories = {
+                            navController.navigate(BottomNavItem.Categories.route)
+                        },
+                        onNavigateToStats = {
+                            navController.navigate("statistics")
                         }
                     )
                 }
@@ -268,7 +275,17 @@ fun HisnApp(viewModel: HisnViewModel) {
                 }
 
                 composable(BottomNavItem.Settings.route) {
-                    SettingsScreen(viewModel = viewModel)
+                    SettingsScreen(
+                        viewModel = viewModel,
+                        onNavigateToStats = { navController.navigate("statistics") }
+                    )
+                }
+
+                composable("statistics") {
+                    StatisticsScreen(
+                        viewModel = viewModel,
+                        onBackClick = { navController.popBackStack() }
+                    )
                 }
             }
         }

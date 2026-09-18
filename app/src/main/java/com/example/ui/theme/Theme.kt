@@ -49,12 +49,92 @@ private val LightColorScheme = lightColorScheme(
     outlineVariant = Color(0xFFDFEBE4)
 )
 
+fun getAppColorScheme(darkTheme: Boolean, palette: String) = when (palette) {
+    "teal" -> if (darkTheme) {
+        darkColorScheme(
+            primary = TealPrimaryLight,
+            onPrimary = Color(0xFF003732),
+            primaryContainer = TealContainerDark,
+            onPrimaryContainer = Color(0xFFB2F5EA),
+            secondary = IslamicGold,
+            background = DarkBackground,
+            surface = DarkSurface,
+            surfaceVariant = DarkSurfaceVariant,
+            outline = DarkBorder
+        )
+    } else {
+        lightColorScheme(
+            primary = TealPrimary,
+            onPrimary = Color.White,
+            primaryContainer = TealContainerLight,
+            onPrimaryContainer = Color(0xFF003732),
+            secondary = IslamicGoldDark,
+            background = LightBackground,
+            surface = LightSurface,
+            surfaceVariant = LightSurfaceVariant,
+            outline = LightBorder
+        )
+    }
+    "navy" -> if (darkTheme) {
+        darkColorScheme(
+            primary = NavyPrimaryLight,
+            onPrimary = Color(0xFF0F2942),
+            primaryContainer = NavyContainerDark,
+            onPrimaryContainer = Color(0xFFCCE4FF),
+            secondary = IslamicGold,
+            background = DarkBackground,
+            surface = DarkSurface,
+            surfaceVariant = DarkSurfaceVariant,
+            outline = DarkBorder
+        )
+    } else {
+        lightColorScheme(
+            primary = NavyPrimary,
+            onPrimary = Color.White,
+            primaryContainer = NavyContainerLight,
+            onPrimaryContainer = Color(0xFF0F2942),
+            secondary = IslamicGoldDark,
+            background = LightBackground,
+            surface = LightSurface,
+            surfaceVariant = LightSurfaceVariant,
+            outline = LightBorder
+        )
+    }
+    "amber" -> if (darkTheme) {
+        darkColorScheme(
+            primary = AmberPrimaryLight,
+            onPrimary = Color(0xFF332000),
+            primaryContainer = AmberContainerDark,
+            onPrimaryContainer = Color(0xFFFFE082),
+            secondary = IslamicGreenLight,
+            background = DarkBackground,
+            surface = DarkSurface,
+            surfaceVariant = DarkSurfaceVariant,
+            outline = DarkBorder
+        )
+    } else {
+        lightColorScheme(
+            primary = AmberPrimary,
+            onPrimary = Color.White,
+            primaryContainer = AmberContainerLight,
+            onPrimaryContainer = Color(0xFF332000),
+            secondary = IslamicGreen,
+            background = LightBackground,
+            surface = LightSurface,
+            surfaceVariant = LightSurfaceVariant,
+            outline = LightBorder
+        )
+    }
+    else -> if (darkTheme) DarkColorScheme else LightColorScheme
+}
+
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    palette: String = "emerald",
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = getAppColorScheme(darkTheme, palette)
 
     MaterialTheme(
         colorScheme = colorScheme,

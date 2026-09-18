@@ -43,5 +43,14 @@ data class UserSettingsEntity(
     val eveningReminderEnabled: Boolean = true,
     val eveningReminderTime: String = "17:00",
     val sleepReminderEnabled: Boolean = false,
-    val sleepReminderTime: String = "22:00"
+    val sleepReminderTime: String = "22:00",
+    val dailyGoalCount: Int = 100,
+    val countMode: String = "button", // "button" or "fullscreen"
+    val showTashkeel: Boolean = true,
+    val themePalette: String = "emerald", // "emerald", "teal", "navy", "amber"
+    val lineSpacingSp: Float = 8f,
+    val todayDhikrCount: Int = 0,
+    val totalDhikrCount: Int = 0,
+    val lastActiveDate: String = "",
+    val daysUsedCount: Int = 1
 )

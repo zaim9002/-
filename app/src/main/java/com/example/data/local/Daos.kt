@@ -27,12 +27,18 @@ interface FavoriteDao {
 
     @Query("DELETE FROM favorites")
     suspend fun clearFavorites()
+
+    @Query("SELECT COUNT(*) FROM favorites")
+    fun getFavoritesCount(): Flow<Int>
 }
 
 @Dao
 interface ReadingProgressDao {
     @Query("SELECT * FROM reading_progress")
     fun getAllProgress(): Flow<List<ReadingProgressEntity>>
+
+    @Query("SELECT * FROM reading_progress ORDER BY lastReadTimestamp DESC LIMIT 10")
+    fun getRecentReads(): Flow<List<ReadingProgressEntity>>
 
     @Query("SELECT * FROM reading_progress WHERE dhikrId = :dhikrId LIMIT 1")
     fun getProgressForDhikr(dhikrId: Int): Flow<ReadingProgressEntity?>

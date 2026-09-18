@@ -43,6 +43,17 @@ class ExampleRobolectricTest {
         val searchResults = HisnContentProvider.searchDhikrs("الكرسي")
         assertTrue("Search for Ayat Al-Kursi should return results", searchResults.isNotEmpty())
         assertTrue(searchResults.any { it.title.contains("الكرسي") })
+
+        // Test Arabic search normalization without diacritics
+        val normalizedResults = HisnContentProvider.searchDhikrs("سبحان الله وبحمده")
+        assertTrue("Search without tashkeel should find dhikr", normalizedResults.isNotEmpty())
+
+        // Test new categories
+        val fearDhikrs = HisnContentProvider.getDhikrsByCategory("fear")
+        assertTrue("Fear category dhikrs should exist", fearDhikrs.isNotEmpty())
+
+        val rainDhikrs = HisnContentProvider.getDhikrsByCategory("rain")
+        assertTrue("Rain category dhikrs should exist", rainDhikrs.isNotEmpty())
     }
 
     @Test

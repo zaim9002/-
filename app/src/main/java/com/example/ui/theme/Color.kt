@@ -30,3 +30,20 @@ val LightCardBackground = Color(0xFFFFFFFF)
 val LightTextPrimary = Color(0xFF0B241A)
 val LightTextSecondary = Color(0xFF4B5563)
 val LightBorder = Color(0xFFD3E4DB)
+
+// Calm Palettes
+val TealPrimary = Color(0xFF0D7E73)
+val TealPrimaryLight = Color(0xFF14B8A6)
+val TealContainerDark = Color(0xFF113430)
+val TealContainerLight = Color(0xFFE0F7F4)
+
+val NavyPrimary = Color(0xFF1D4E89)
+val NavyPrimaryLight = Color(0xFF3B82F6)
+val NavyContainerDark = Color(0xFF132238)
+val NavyContainerLight = Color(0xFFE3EDF9)
+
+val AmberPrimary = Color(0xFF8C6212)
+val AmberPrimaryLight = Color(0xFFF59E0B)
+val AmberContainerDark = Color(0xFF382708)
+val AmberContainerLight = Color(0xFFFAF2DD)
+

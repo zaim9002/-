@@ -66,6 +66,31 @@ class HisnViewModel(application: Application) : AndroidViewModel(application) {
     val lastRead: StateFlow<ReadingProgressEntity?> = repository.lastRead
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val recentReads: StateFlow<List<ReadingProgressEntity>> = repository.recentReads
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val favoritesCount: StateFlow<Int> = repository.favoritesCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    init {
+        viewModelScope.launch {
+            userSettings.collect { settings ->
+                val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ENGLISH).format(java.util.Date())
+                if (settings.lastActiveDate.isNotEmpty() && settings.lastActiveDate != todayStr) {
+                    val updated = settings.copy(
+                        todayDhikrCount = 0,
+                        lastActiveDate = todayStr,
+                        daysUsedCount = settings.daysUsedCount + 1
+                    )
+                    repository.saveSettings(updated)
+                } else if (settings.lastActiveDate.isEmpty()) {
+                    val updated = settings.copy(lastActiveDate = todayStr)
+                    repository.saveSettings(updated)
+                }
+            }
+        }
+    }
+
     // Current Reader State
     private val _currentReaderDhikrList = MutableStateFlow<List<Dhikr>>(emptyList())
     val currentReaderDhikrList: StateFlow<List<Dhikr>> = _currentReaderDhikrList.asStateFlow()
@@ -119,12 +144,19 @@ class HisnViewModel(application: Application) : AndroidViewModel(application) {
         val validIndex = startIndex.coerceIn(0, categoryOrList.size - 1)
         _currentReaderIndex.value = validIndex
         val dhikr = categoryOrList[validIndex]
-        _currentRemainingCount.value = dhikr.count
-        _currentCompletedCount.value = 0
+
+        val existingProgress = allProgress.value.find { it.dhikrId == dhikr.id }
+        if (existingProgress != null && existingProgress.currentCount < dhikr.count) {
+            _currentCompletedCount.value = existingProgress.currentCount
+            _currentRemainingCount.value = (dhikr.count - existingProgress.currentCount).coerceAtLeast(0)
+        } else {
+            _currentCompletedCount.value = 0
+            _currentRemainingCount.value = dhikr.count
+        }
 
         // record progress in DB
         viewModelScope.launch {
-            repository.saveProgress(dhikr.id, dhikr.categoryId, 0, dhikr.count)
+            repository.saveProgress(dhikr.id, dhikr.categoryId, _currentCompletedCount.value, dhikr.count)
         }
     }
 
@@ -142,36 +174,39 @@ class HisnViewModel(application: Application) : AndroidViewModel(application) {
         val dhikr = list[index]
         val settings = userSettings.value
 
-        if (_currentRemainingCount.value > 1) {
-            _currentRemainingCount.value -= 1
-            _currentCompletedCount.value += 1
-            hapticSoundHelper.vibrateTick(settings.isHapticEnabled)
-            hapticSoundHelper.playClickSound(settings.isSoundEnabled)
+        val newCompleted = (_currentCompletedCount.value + 1).coerceAtMost(dhikr.count)
+        val newRemaining = (dhikr.count - newCompleted).coerceAtLeast(0)
+        _currentCompletedCount.value = newCompleted
+        _currentRemainingCount.value = newRemaining
 
-            viewModelScope.launch {
-                repository.saveProgress(
-                    dhikr.id,
-                    dhikr.categoryId,
-                    _currentCompletedCount.value,
-                    dhikr.count
-                )
-            }
-        } else if (_currentRemainingCount.value == 1) {
-            _currentRemainingCount.value = 0
-            _currentCompletedCount.value = dhikr.count
+        if (newRemaining == 0) {
             hapticSoundHelper.vibrateComplete(settings.isHapticEnabled)
             hapticSoundHelper.playClickSound(settings.isSoundEnabled)
+        } else {
+            hapticSoundHelper.vibrateTick(settings.isHapticEnabled)
+            hapticSoundHelper.playClickSound(settings.isSoundEnabled)
+        }
 
+        viewModelScope.launch {
+            repository.saveProgress(
+                dhikr.id,
+                dhikr.categoryId,
+                newCompleted,
+                dhikr.count
+            )
+            // Increment statistics
+            val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ENGLISH).format(java.util.Date())
+            val updatedSettings = settings.copy(
+                todayDhikrCount = settings.todayDhikrCount + 1,
+                totalDhikrCount = settings.totalDhikrCount + 1,
+                lastActiveDate = todayStr
+            )
+            repository.saveSettings(updatedSettings)
+        }
+
+        if (newRemaining == 0 && settings.autoAdvance && index < list.size - 1) {
             viewModelScope.launch {
-                repository.saveProgress(
-                    dhikr.id,
-                    dhikr.categoryId,
-                    dhikr.count,
-                    dhikr.count
-                )
-            }
-
-            if (settings.autoAdvance && index < list.size - 1) {
+                kotlinx.coroutines.delay(450)
                 nextDhikr()
             }
         }
@@ -184,9 +219,18 @@ class HisnViewModel(application: Application) : AndroidViewModel(application) {
         if (nextIdx != _currentReaderIndex.value) {
             _currentReaderIndex.value = nextIdx
             val nextDhikr = list[nextIdx]
-            _currentRemainingCount.value = nextDhikr.count
-            _currentCompletedCount.value = 0
+            val existingProgress = allProgress.value.find { it.dhikrId == nextDhikr.id }
+            if (existingProgress != null && existingProgress.currentCount < nextDhikr.count) {
+                _currentCompletedCount.value = existingProgress.currentCount
+                _currentRemainingCount.value = (nextDhikr.count - existingProgress.currentCount).coerceAtLeast(0)
+            } else {
+                _currentCompletedCount.value = 0
+                _currentRemainingCount.value = nextDhikr.count
+            }
             audioReciterService.stop()
+            viewModelScope.launch {
+                repository.saveProgress(nextDhikr.id, nextDhikr.categoryId, _currentCompletedCount.value, nextDhikr.count)
+            }
         }
     }
 
@@ -197,9 +241,18 @@ class HisnViewModel(application: Application) : AndroidViewModel(application) {
         if (prevIdx != _currentReaderIndex.value) {
             _currentReaderIndex.value = prevIdx
             val prevDhikr = list[prevIdx]
-            _currentRemainingCount.value = prevDhikr.count
-            _currentCompletedCount.value = 0
+            val existingProgress = allProgress.value.find { it.dhikrId == prevDhikr.id }
+            if (existingProgress != null && existingProgress.currentCount < prevDhikr.count) {
+                _currentCompletedCount.value = existingProgress.currentCount
+                _currentRemainingCount.value = (prevDhikr.count - existingProgress.currentCount).coerceAtLeast(0)
+            } else {
+                _currentCompletedCount.value = 0
+                _currentRemainingCount.value = prevDhikr.count
+            }
             audioReciterService.stop()
+            viewModelScope.launch {
+                repository.saveProgress(prevDhikr.id, prevDhikr.categoryId, _currentCompletedCount.value, prevDhikr.count)
+            }
         }
     }
 
@@ -210,6 +263,23 @@ class HisnViewModel(application: Application) : AndroidViewModel(application) {
         val dhikr = list[index]
         _currentRemainingCount.value = dhikr.count
         _currentCompletedCount.value = 0
+        viewModelScope.launch {
+            repository.saveProgress(dhikr.id, dhikr.categoryId, 0, dhikr.count)
+        }
+    }
+
+    fun resetAllTodayProgress() {
+        viewModelScope.launch {
+            repository.resetAllProgress()
+            val current = userSettings.value
+            repository.saveSettings(current.copy(todayDhikrCount = 0))
+            _currentCompletedCount.value = 0
+            val list = _currentReaderDhikrList.value
+            val index = _currentReaderIndex.value
+            if (list.isNotEmpty() && index in list.indices) {
+                _currentRemainingCount.value = list[index].count
+            }
+        }
     }
 
     fun toggleFavorite(dhikrId: Int) {
@@ -281,22 +351,59 @@ class HisnViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun filterSearchResults() {
-        val query = _searchQuery.value.trim().lowercase()
+        val query = _searchQuery.value.trim()
         val cat = _selectedSearchCategory.value
 
-        var results = if (cat == null) allDhikrs else allDhikrs.filter { it.categoryId == cat }
-        if (query.isNotEmpty()) {
-            results = results.filter {
-                it.title.lowercase().contains(query) ||
-                it.text.lowercase().contains(query) ||
-                it.source.lowercase().contains(query) ||
-                it.benefit.lowercase().contains(query)
-            }
-        }
-        _searchResults.value = results
+        val searched = if (query.isEmpty()) allDhikrs else HisnContentProvider.searchDhikrs(query)
+        _searchResults.value = if (cat == null) searched else searched.filter { it.categoryId == cat }
     }
 
     // Settings actions
+    fun setDailyGoal(goal: Int) {
+        val clamped = goal.coerceIn(10, 5000)
+        viewModelScope.launch {
+            val current = userSettings.value
+            repository.saveSettings(current.copy(dailyGoalCount = clamped))
+        }
+    }
+
+    fun setCountMode(mode: String) {
+        viewModelScope.launch {
+            val current = userSettings.value
+            repository.saveSettings(current.copy(countMode = mode))
+        }
+    }
+
+    fun setShowTashkeel(show: Boolean) {
+        viewModelScope.launch {
+            val current = userSettings.value
+            repository.saveSettings(current.copy(showTashkeel = show))
+        }
+    }
+
+    fun setThemePalette(palette: String) {
+        viewModelScope.launch {
+            val current = userSettings.value
+            repository.saveSettings(current.copy(themePalette = palette))
+        }
+    }
+
+    fun setLineSpacing(spacing: Float) {
+        val clamped = spacing.coerceIn(4f, 24f)
+        viewModelScope.launch {
+            val current = userSettings.value
+            repository.saveSettings(current.copy(lineSpacingSp = clamped))
+        }
+    }
+
+    fun formatDhikrText(rawText: String, showTashkeel: Boolean): String {
+        return if (showTashkeel) {
+            rawText
+        } else {
+            rawText.replace(Regex("[\\u064B-\\u065F\\u0670]"), "")
+        }
+    }
+
     fun setDarkMode(isDark: Boolean?) {
         viewModelScope.launch {
             val current = userSettings.value
